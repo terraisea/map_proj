@@ -1,0 +1,119 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; This example file demonstrates the user functions used to acces ENVI
+; Vector Format Files (EVF).
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; The user routines used to create an EVF are: 
+;
+;   envi_evf_define_init, envi_evf_define_add_record, envi_evf_define_close
+;
+; The user routines used to access an existing EVF are:
+;
+;   envi_evf_open, envi_evf_info, envi_evf_read_record, envi_evf_close
+;
+; All these procedures and functions are fully described in the ENVI
+; Programmers Guide.  Additionally, the following two procedures give an
+; example demonstrating the use of these routines.
+;
+pro ascii_to_evf
+;
+; given some test lat/lon data, enter these points into a new evf file
+; 
+  ;
+  ; 10 lat/lon points
+  ;
+  lat_points = 40. + findgen(10)/100.
+  lon_points = -105 + findgen(10)/100.
+  ;
+  ; a bounding box
+  ;
+  lat_box = [39.5, 39.75, 41.25, 41.5, 39.5]
+  lon_box = [-104.75, -105.25, -105.25, -104.75, -104.75]
+  ;
+  out_name = '/tmp/test.evf'
+  ;
+  ; define the projection structure of the points
+  ;
+  proj = envi_proj_create(/geographic)
+  ;
+  ; open the new evf file. evfd_id is a special pointer used to reference
+  ; this particular evf file.
+  ; 
+  evfd_id = envi_evf_define_init(out_name, projection=proj, $
+    data_type=4, layer_name='Some Lat/Lon Points and Bounding Box')
+  if (ptr_valid(evfd_id) eq 0) then return
+  ;
+  ; enter the individual points as records
+  ;
+  for i=0,9 do $
+    envi_evf_define_add_record, evfd_id, [lon_points[i],lat_points[i]]
+  ;
+  ; enter the bounding box as a polygon (2,n)
+  ;
+  envi_evf_define_add_record, evfd_id, transpose([[lon_box],[lat_box]])
+  ;
+  ; close the file and retrieve the evf_id of the new evf
+  ;
+  evf_id = envi_evf_define_close(evfd_id)
+  ;
+  envi_evf_info, evf_id, num_recs=num_recs, data_type=data_type, $
+    projection=projection, layer_name=layer_name
+  print,'Layer name: ' + layer_name
+  print,'Num Recs  : ', num_recs
+  print,'Data Type : ', data_type
+  print,'Projection: ' + projection.name
+  ;
+  ; dont forget to close the evf_id
+  ;
+  envi_evf_close, evf_id
+end
+
+pro evf_to_ascii, evf_name, out_name
+;
+; given an evf filename output all the records to an ascii file.
+;
+  if (n_elements(evf_name) eq 0) then return
+  if (n_elements(out_name) eq 0) then out_name = '/tmp/test.txt'
+  ;
+  !error = 0
+  on_ioerror, trouble
+  ;
+  evf_id = envi_evf_open(evf_name)
+  if (ptr_valid(evf_id) eq 0) then return
+  ;
+  get_lun, unit
+  openw, unit, out_name
+  ;
+  envi_evf_info, evf_id, layer_name=layer_name, num_recs=num_recs, $
+    projection=projection, data_type=data_type
+  ;
+  ; output this evf layer name and projection type to the output file
+  ;
+  printf, unit, 'Layer Name: ' + layer_name
+  if (projection.type eq 0) then name = 'None' $
+  else                           name = projection.name 
+  printf, unit, 'Projection: ' + name, ''
+  ;
+  for i=0l, num_recs-1 do begin
+  ;
+  ; loop through each record in the evf, reading in the points and
+  ; outputting them to an ascii file.
+  ;
+    points = envi_evf_read_record(evf_id, i)
+    ; 
+    ; print the id of this record and the number of coordinate
+    ; pairs contained in this record followed by the coordinate pairs
+    ; themselves.
+    ;
+    printf, unit, i, n_elements(points)/2
+    printf, unit, points
+  endfor
+trouble: if (!error ne 0) then print,'Error: ' + !err_string
+  free_lun, unit
+  ;
+  ; close the evf_file and clean up the data structure
+  ;
+  envi_evf_close, evf_id
+end
